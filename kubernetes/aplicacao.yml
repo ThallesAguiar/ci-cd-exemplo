@@ -1,0 +1,52 @@
+# Este arquivo é uma lista de instruções para o Kubernetes.
+# Kubernetes é como um gerente que mantém a aplicação ligada em computadores do cluster.
+
+# Primeiro criamos um "bairro" para deixar os objetos deste curso organizados.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: curso-cicd
+---
+# Um Deployment diz quantas cópias da aplicação devem ficar funcionando.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aplicacao-node
+  namespace: curso-cicd
+spec:
+  # Uma cópia é suficiente para aprender. Em produção normalmente usamos mais.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aplicacao-node
+  template:
+    metadata:
+      labels:
+        # Esta etiqueta liga a cópia da aplicação ao Service abaixo.
+        app: aplicacao-node
+    spec:
+      containers:
+        # Este nome também é usado pelo pipeline quando troca a imagem.
+        - name: aplicacao-node
+          # É apenas uma imagem inicial. O pipeline sempre a troca pela etiqueta do commit.
+          image: ghcr.io/thallesaguiar/ci-cd-exemplo:latest
+          ports:
+            # A porta dentro do container é a mesma exposta no Dockerfile.
+            - containerPort: 3000
+---
+# Um Service cria um endereço estável para encontrar a aplicação dentro do cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: aplicacao-node
+  namespace: curso-cicd
+spec:
+  selector:
+    # Encontra os containers que possuem a etiqueta app: aplicacao-node.
+    app: aplicacao-node
+  ports:
+    # Quem usa o Service fala na porta 80; o Service repassa para a 3000 da aplicação.
+    - port: 80
+      targetPort: 3000
+  # ClusterIP deixa o endereço disponível somente dentro do cluster, o modo mais simples.
+  type: ClusterIP

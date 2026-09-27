@@ -1,51 +1,141 @@
-# Este arquivo ensina o GitHub Actions a testar o projeto automaticamente.
-# GitHub Actions é o "robô" do GitHub que pega um computador emprestado,
-# prepara o projeto e confirma se está tudo funcionando.
+# Este arquivo é a receita do robô do GitHub. O robô se chama GitHub Actions.
+# Linhas que começam com # são explicações para você; o robô não as executa.
 
-# Nome que aparecerá na página "Actions" do repositório no GitHub.
-name: Testar aplicação Node.js
+# Este é o nome bonito que aparecerá na aba Actions do GitHub.
+name: Testar, empacotar e enviar a aplicação
 
-# Escolhe os momentos em que o robô deve trabalhar.
+# "on" diz quando o robô deve acordar para trabalhar.
 on:
-  # Roda quando alguém envia commits para qualquer branch.
+  # "push" significa: alguém enviou commits para o GitHub.
   push:
-  # Roda quando alguém abre ou atualiza uma pull request.
+  # "pull_request" significa: alguém pediu para juntar uma mudança à branch principal.
   pull_request:
 
-# "jobs" é a lista de tarefas do robô. Aqui temos só uma tarefa de testes.
+# Estas são as permissões do robô.
+permissions:
+  # Ele pode ler o código para testar e montar a imagem.
+  contents: read
+  # Ele pode guardar imagens Docker no armário de imagens do GitHub, o GHCR.
+  packages: write
+
+# "env" guarda apelidos que podem ser usados em várias tarefas.
+env:
+  # Este é o nome da imagem Docker. Docker pede nomes em letras minúsculas.
+  IMAGE_NAME: ghcr.io/thallesaguiar/ci-cd-exemplo
+
+# "jobs" é a lista de tarefas grandes que o robô fará.
 jobs:
+  # Esta primeira tarefa confere se a aplicação continua funcionando.
   testar:
-    # Nome mais amigável para mostrar na tela do GitHub.
+    # Este nome aparece na tela do GitHub para ficar fácil de entender.
     name: Instalar e executar testes
-
-    # Pede um computador temporário com Linux para o GitHub.
+    # O GitHub empresta um computador temporário com Linux para o robô usar.
     runs-on: ubuntu-latest
-
-    # Os passos são executados de cima para baixo, como uma receita.
+    # "steps" é a lista de passos pequenos, feita de cima para baixo.
     steps:
-      # Baixa uma cópia do código do repositório para o computador temporário.
+      # Este passo baixa uma cópia do código para o computador temporário.
+      - name: Baixar o código
+        # checkout é a ação pronta do GitHub para baixar o repositório.
+        uses: actions/checkout@v4
+
+      # Este passo instala o Node.js, que é a ferramenta que roda nossa aplicação.
+      - name: Preparar o Node.js
+        # setup-node é a ação pronta que instala uma versão do Node.js.
+        uses: actions/setup-node@v4
+        # "with" é a lista de informações que entregamos para essa ação.
+        with:
+          # Usamos a versão 20.7.0, igual à do pipeline do GitLab.
+          node-version: 20.7.0
+          # O cache guarda downloads de bibliotecas para o próximo robô trabalhar mais rápido.
+          cache: npm
+          # Nossa lista de bibliotecas fica dentro da pasta app.
+          cache-dependency-path: app/package.json
+
+      # Este passo baixa as bibliotecas que o programa precisa.
+      - name: Instalar as bibliotecas
+        # "run" manda o robô executar este comando no terminal.
+        run: npm install
+        # O package.json está dentro de app, então o comando começa nesta pasta.
+        working-directory: app
+
+      # Este passo roda os testes do projeto.
+      - name: Executar os testes
+        # npm test procura a tarefa chamada test dentro do package.json.
+        run: npm test
+        # Os testes também moram dentro da pasta app.
+        working-directory: app
+
+  # Esta tarefa só começa quando a tarefa "testar" terminar sem erros.
+  criar_imagem_docker:
+    # Este nome aparece na tela do GitHub.
+    name: Criar e publicar a imagem Docker
+    # "needs" quer dizer: espere a tarefa testar terminar bem.
+    needs: testar
+    # "if" é uma condição: só publique imagem em um push para a branch main.
+    # Pull requests testam o código, mas não publicam uma imagem.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Esta tarefa também ganha um computador Linux temporário.
+    runs-on: ubuntu-latest
+    steps:
+      # Cada tarefa ganha um computador novo, então baixamos o código outra vez.
       - name: Baixar o código
         uses: actions/checkout@v4
 
-      # Instala a mesma versão do Node.js usada no pipeline do GitLab.
-      # "cache: npm" guarda downloads das bibliotecas para as próximas execuções
-      # serem mais rápidas; não guarda nem publica o código da aplicação.
-      - name: Preparar o Node.js
-        uses: actions/setup-node@v4
+      # Este passo abre o armário de imagens do GitHub.
+      - name: Entrar no armário de imagens do GitHub
+        # login-action é uma ação pronta que faz login no registro Docker.
+        uses: docker/login-action@v3
         with:
-          node-version: 20.7.0
-          cache: npm
-          # O package.json está dentro de app, então avisamos onde ele está.
-          cache-dependency-path: app/package.json
+          # ghcr.io é o endereço do GitHub Container Registry.
+          registry: ghcr.io
+          # github.actor é o nome de quem acionou o robô.
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN é uma senha temporária e secreta criada pelo GitHub.
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # "working-directory" evita repetir "cd app" em cada comando.
-      # É como dizer: "a partir de agora, faça tudo dentro da pasta app".
-      - name: Instalar as bibliotecas
-        run: npm install
-        working-directory: app
+      # Este passo monta a caixa Docker e a guarda no armário.
+      - name: Criar e publicar a imagem
+        # O símbolo | permite escrever mais de um comando, um abaixo do outro.
+        run: |
+          # Cria uma imagem e usa o código único do commit como etiqueta.
+          docker build -t "$IMAGE_NAME:${{ github.sha }}" .
+          # Envia a imagem pronta para o GHCR.
+          docker push "$IMAGE_NAME:${{ github.sha }}"
 
-      # Executa o comando "test" escrito no package.json, que chama o Jest.
-      # Se algum teste falhar, este passo falha e o GitHub avisa na pull request.
-      - name: Executar os testes
-        run: npm test
-        working-directory: app
+  # Esta é a última tarefa: ela avisa o Kubernetes sobre a imagem nova.
+  enviar_para_kubernetes:
+    # Este nome aparece na tela do GitHub.
+    name: Enviar para o Kubernetes
+    # Só começa depois de a imagem Docker existir no armário.
+    needs: criar_imagem_docker
+    # Este interruptor evita deploy por acidente.
+    # A tarefa só roda se você criar DEPLOY_ENABLED com o valor true no GitHub.
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    # O Kubernetes será controlado por outro computador Linux temporário.
+    runs-on: ubuntu-latest
+    steps:
+      # Baixa o arquivo com as instruções Kubernetes.
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      # Instala kubectl, que é como um controle remoto do Kubernetes.
+      - name: Preparar o controle remoto do Kubernetes
+        # setup-kubectl é uma ação pronta que instala o programa kubectl.
+        uses: azure/setup-kubectl@v4
+        with:
+          # Esta é a versão do controle remoto que usaremos na aula.
+          version: v1.29.0
+
+      # Cria um arquivo temporário para o robô saber qual cluster deve controlar.
+      - name: Criar o arquivo secreto de acesso
+        # KUBE_CONFIG_DATA é o segredo que você cadastrará no GitHub.
+        # base64 --decode transforma o texto secreto de volta em arquivo.
+        run: echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 --decode > kubeconfig
+
+      # Entrega as instruções ao Kubernetes e troca a aplicação pela versão nova.
+      - name: Atualizar a aplicação no Kubernetes
+        run: |
+          # Cria ou atualiza o Deployment e o Service descritos na pasta kubernetes.
+          kubectl --kubeconfig=kubeconfig apply -f kubernetes/
+          # Diz ao Deployment para usar a imagem deste commit específico.
+          kubectl --kubeconfig=kubeconfig -n curso-cicd set image deployment/aplicacao-node aplicacao-node="$IMAGE_NAME:${{ github.sha }}"
