@@ -1,0 +1,51 @@
+# Este arquivo ensina o GitHub Actions a testar o projeto automaticamente.
+# GitHub Actions é o "robô" do GitHub que pega um computador emprestado,
+# prepara o projeto e confirma se está tudo funcionando.
+
+# Nome que aparecerá na página "Actions" do repositório no GitHub.
+name: Testar aplicação Node.js
+
+# Escolhe os momentos em que o robô deve trabalhar.
+on:
+  # Roda quando alguém envia commits para qualquer branch.
+  push:
+  # Roda quando alguém abre ou atualiza uma pull request.
+  pull_request:
+
+# "jobs" é a lista de tarefas do robô. Aqui temos só uma tarefa de testes.
+jobs:
+  testar:
+    # Nome mais amigável para mostrar na tela do GitHub.
+    name: Instalar e executar testes
+
+    # Pede um computador temporário com Linux para o GitHub.
+    runs-on: ubuntu-latest
+
+    # Os passos são executados de cima para baixo, como uma receita.
+    steps:
+      # Baixa uma cópia do código do repositório para o computador temporário.
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      # Instala a mesma versão do Node.js usada no pipeline do GitLab.
+      # "cache: npm" guarda downloads das bibliotecas para as próximas execuções
+      # serem mais rápidas; não guarda nem publica o código da aplicação.
+      - name: Preparar o Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.7.0
+          cache: npm
+          # O package.json está dentro de app, então avisamos onde ele está.
+          cache-dependency-path: app/package.json
+
+      # "working-directory" evita repetir "cd app" em cada comando.
+      # É como dizer: "a partir de agora, faça tudo dentro da pasta app".
+      - name: Instalar as bibliotecas
+        run: npm install
+        working-directory: app
+
+      # Executa o comando "test" escrito no package.json, que chama o Jest.
+      # Se algum teste falhar, este passo falha e o GitHub avisa na pull request.
+      - name: Executar os testes
+        run: npm test
+        working-directory: app

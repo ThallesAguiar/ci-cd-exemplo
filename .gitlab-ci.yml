@@ -1,11 +1,26 @@
+# Um pipeline e uma lista de tarefas que o GitLab executa automaticamente.
+# Pense nele como uma receita: cada "stage" e cada "job" é uma parte dela.
 stages:
+  # Aqui teremos somente a etapa que confere se o projeto continua funcionando.
   - test
 
+# Este é o nome da tarefa. Pode ser qualquer nome fácil de entender.
 realizar_testes:
+  # Diz que esta tarefa pertence à etapa "test" criada acima.
   stage: test
+
+  # É o computador temporário usado pelo GitLab para executar a tarefa.
+  # Ele já vem com a versão 20.7.0 do Node.js instalada.
   image: node:20.7.0-alpine3.17
+
+  # Comandos de preparação: acontecem antes dos testes.
   before_script:
+    # O código Node.js fica dentro da pasta app, então entramos nela primeiro.
     - cd app/
+    # Baixa as "peças de Lego" (bibliotecas) de que o projeto precisa.
     - npm install
+
+  # Comandos que fazem o trabalho principal desta tarefa.
   script:
+    # Executa os testes definidos no arquivo app/package.json.
     - npm test
